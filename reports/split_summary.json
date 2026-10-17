@@ -1,0 +1,31 @@
+{
+  "classes": [
+    "helmet",
+    "head"
+  ],
+  "seed": 42,
+  "splits": {
+    "test": {
+      "images": 500,
+      "boxes": {
+        "helmet": 1993,
+        "head": 625
+      }
+    },
+    "val": {
+      "images": 1000,
+      "boxes": {
+        "helmet": 3775,
+        "head": 1076
+      }
+    },
+    "train": {
+      "images": 3500,
+      "boxes": {
+        "helmet": 13198,
+        "head": 4084
+      }
+    }
+  },
+  "skipped_missing_image": 0
+}

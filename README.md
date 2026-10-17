@@ -35,14 +35,26 @@ A real-time computer vision system that detects workers without helmets and iden
 
 ## Results
 
-Detection metrics come from [`training/evaluate.py`](training/evaluate.py), run on the **held-out test split** (10% of images, never used for training or for picking the best epoch).
+YOLOv8s trained for 60 epochs on the [Hard Hat Detection](https://www.kaggle.com/datasets/andrewmvd/hard-hat-detection) dataset (3,500 train / 1,000 validation / 500 test images, seed 42) on an RTX 5060 Laptop GPU, in 39 minutes. Scores below are on the **held-out test split**: 500 images and 2,618 heads that were never used for training or for choosing the best epoch.
 
-| Metric | Value |
+| Metric | Test split |
 |---|---|
-| mAP@0.5 | *see [`reports/detection_metrics.md`](reports/) after training* |
-| mAP@0.5:0.95 | *see [`reports/detection_metrics.md`](reports/) after training* |
+| **mAP@0.5** | **95.5%** |
+| **mAP@0.5:0.95** | **63.4%** |
+| Precision | 92.1% |
+| Recall | 91.7% |
+| Inference | 5.2 ms / image (RTX 5060) |
 
-To reproduce them, see [Training the detector](#training-the-detector).
+| Class | AP@0.5 | AP@0.5:0.95 |
+|---|---|---|
+| helmet | 96.6% | 64.3% |
+| head (no helmet) | 94.5% | 62.4% |
+
+Full report: [`reports/detection_metrics.md`](reports/detection_metrics.md). Training curves, the precision–recall curve and the confusion matrix are in [`reports/figures/`](reports/figures/).
+
+<p align="center"><img src="reports/figures/example_detection.jpg" width="420" alt="Example: two workers with helmets (green) and one without (red), from the test split"></p>
+
+To reproduce these numbers, see [Training the detector](#training-the-detector).
 
 ## Features
 
@@ -65,7 +77,7 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-1. Put the trained detector at `models/helmet_yolov8.pt` (see below).
+1. Download the trained detector from the [latest release](https://github.com/HarshKnight2477/Helmet-Monitoring-Face-Recognition/releases/latest) and save it as `models/helmet_yolov8.pt`. Or train your own, as described below.
 2. Start the server:
    ```bash
    uvicorn helmet_monitor.main:app --port 8000
@@ -95,12 +107,14 @@ docker run -p 8000:8000 helmet-monitor
 3. Set *Accelerator* to **GPU** and *Internet* to **On**, then click *Run All* (about 1–2 hours).
 4. Download `helmet_yolov8.pt` into `models/` and unzip `reports.zip` into `reports/`.
 
-The notebook uses the scripts in [`training/`](training/), which also run locally:
+With an NVIDIA GPU, the same steps run locally. The published model was trained this way. Install a CUDA build of PyTorch first ([pytorch.org](https://pytorch.org/get-started/locally/)), then:
 
 ```bash
-python training/prepare_dataset.py --annotations <voc xml dir> --images <image dir> --output data/helmet-yolo
-yolo detect train data=data/helmet-yolo/data.yaml model=yolov8s.pt epochs=60 imgsz=640
-python training/evaluate.py --weights runs/detect/train/weights/best.pt --data data/helmet-yolo/data.yaml
+pip install kagglehub
+python -c "import kagglehub; print(kagglehub.dataset_download('andrewmvd/hard-hat-detection'))"
+python training/prepare_dataset.py --annotations <path>/annotations --images <path>/images --output data/helmet-yolo
+yolo detect train data=data/helmet-yolo/data.yaml model=yolov8s.pt epochs=60 imgsz=640 batch=16 patience=20 seed=42 project=runs name=helmet
+python training/evaluate.py --weights runs/helmet/weights/best.pt --data data/helmet-yolo/data.yaml --split test
 ```
 
 `prepare_dataset.py` converts VOC boxes to YOLO format, drops the `person` class, and makes a reproducible 70/20/10 split (seed 42).
