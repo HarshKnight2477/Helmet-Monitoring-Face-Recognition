@@ -5,27 +5,30 @@ import cv2
 import numpy as np
 import pytest
 
+from training.check_bike_helmets import classify_boxes
 from training.evaluate import write_reports
-from training.prepare_dataset import parse_voc, prepare, to_yolo_lines
+from training.prepare_dataset import (VocAnnotation, VocBox, parse_label_map, parse_voc, prepare,
+                                      to_yolo_lines)
 
 ROOT = Path(__file__).resolve().parent.parent
 
-VOC = """<annotation>
-  <filename>{name}.png</filename>
-  <size><width>200</width><height>100</height><depth>3</depth></size>
-  <object><name>helmet</name><bndbox><xmin>10</xmin><ymin>10</ymin><xmax>50</xmax><ymax>50</ymax></bndbox></object>
-  <object><name>head</name><bndbox><xmin>100</xmin><ymin>20</ymin><xmax>140</xmax><ymax>60</ymax></bndbox></object>
-  <object><name>person</name><bndbox><xmin>0</xmin><ymin>0</ymin><xmax>200</xmax><ymax>100</ymax></bndbox></object>
-</annotation>"""
+HARD_HAT_OBJECTS = [("helmet", 10, 10, 50, 50), ("head", 100, 20, 140, 60), ("person", 0, 0, 200, 100)]
+BIKE_OBJECTS = [("With Helmet", 10, 10, 50, 50), ("Without Helmet", 100, 20, 140, 60)]
 
 
-def make_voc_dataset(root: Path, count: int) -> tuple[Path, Path]:
-    annotations, images = root / "annotations", root / "images"
-    annotations.mkdir()
-    images.mkdir()
+def make_voc_dataset(root: Path, count: int, prefix: str = "hard_hat_workers",
+                     objects=HARD_HAT_OBJECTS) -> tuple[Path, Path]:
+    annotations, images = root / prefix / "annotations", root / prefix / "images"
+    annotations.mkdir(parents=True)
+    images.mkdir(parents=True)
+    body = "".join(f"<object><name>{n}</name><bndbox><xmin>{a}</xmin><ymin>{b}</ymin>"
+                   f"<xmax>{c}</xmax><ymax>{d}</ymax></bndbox></object>" for n, a, b, c, d in objects)
     for i in range(count):
-        (annotations / f"hard_hat_workers{i}.xml").write_text(VOC.format(name=f"hard_hat_workers{i}"))
-        cv2.imwrite(str(images / f"hard_hat_workers{i}.png"), np.zeros((100, 200, 3), np.uint8))
+        name = f"{prefix}{i}"
+        (annotations / f"{name}.xml").write_text(
+            f"<annotation><filename>{name}.png</filename><size><width>200</width>"
+            f"<height>100</height><depth>3</depth></size>{body}</annotation>")
+        cv2.imwrite(str(images / f"{name}.png"), np.zeros((100, 200, 3), np.uint8))
     return annotations, images
 
 
@@ -36,15 +39,26 @@ def test_voc_to_yolo_normalises_and_drops_person(tmp_path):
                      "1 0.600000 0.400000 0.200000 0.400000"]
 
 
+def test_bike_helmets_are_remapped_to_no_hard_hat(tmp_path):
+    annotations, _ = make_voc_dataset(tmp_path, 1, "BikesHelmets", BIKE_OBJECTS)
+    annotation = parse_voc(annotations / "BikesHelmets0.xml")
+    lines = to_yolo_lines(annotation, ("helmet", "head"), {"with helmet": "head", "without helmet": "head"})
+    assert [line.split()[0] for line in lines] == ["1", "1"]
+
+
 def test_boxes_are_clipped_to_the_image():
-    from training.prepare_dataset import VocAnnotation, VocBox
     annotation = VocAnnotation("x.png", 100, 100, [VocBox("head", -10, 50, 50, 120)])
     assert to_yolo_lines(annotation, ("helmet", "head")) == ["1 0.250000 0.750000 0.500000 0.500000"]
 
 
+def test_parse_label_map():
+    assert parse_label_map("With Helmet=head, without helmet = head") == {
+        "with helmet": "head", "without helmet": "head"}
+
+
 def test_prepare_splits_70_20_10_reproducibly(tmp_path):
-    annotations, images = make_voc_dataset(tmp_path, 20)
-    summary = prepare(annotations, images, tmp_path / "out", seed=42)
+    source = make_voc_dataset(tmp_path, 20)
+    summary = prepare([source], tmp_path / "out", seed=42)
     counts = {split: info["images"] for split, info in summary["splits"].items()}
     assert counts == {"train": 14, "val": 4, "test": 2}
     assert summary["splits"]["train"]["boxes"] == {"helmet": 14, "head": 14}
@@ -54,15 +68,36 @@ def test_prepare_splits_70_20_10_reproducibly(tmp_path):
     assert len(list((out / "labels" / "test").glob("*.txt"))) == 2
     assert "names: [helmet, head]" in (out / "data.yaml").read_text()
 
-    again = prepare(annotations, images, tmp_path / "out2", seed=42)
+    again = prepare([source], tmp_path / "out2", seed=42)
     test_files = lambda d: sorted(p.name for p in (d / "images" / "test").iterdir())
     assert test_files(out) == test_files(tmp_path / "out2")
     assert again["splits"] == summary["splits"]
 
 
+def test_prepare_combines_datasets_and_splits_each_one(tmp_path):
+    hard_hat = make_voc_dataset(tmp_path, 20)
+    bike = make_voc_dataset(tmp_path, 10, "BikesHelmets", BIKE_OBJECTS)
+    summary = prepare([hard_hat, bike], tmp_path / "out", seed=42)
+    assert summary["sources"] == {"hard_hat_workers": {"test": 2, "val": 4, "train": 14},
+                                  "BikesHelmets": {"test": 1, "val": 2, "train": 7}}
+    # 7 bike images x 2 heads each are added to "head"; no bike box becomes "helmet".
+    assert summary["splits"]["train"]["boxes"] == {"helmet": 14, "head": 14 + 14}
+
+    manifest = json.loads((tmp_path / "out" / "test_manifest.json").read_text())
+    bike_items = [m for m in manifest if m["source"] == "BikesHelmets"]
+    assert len(manifest) == 3 and len(bike_items) == 1
+    assert [b["label"] for b in bike_items[0]["boxes"]] == ["with helmet", "without helmet"]
+
+
 def test_prepare_requires_annotations(tmp_path):
     with pytest.raises(FileNotFoundError):
-        prepare(tmp_path, tmp_path, tmp_path / "out")
+        prepare([(tmp_path, tmp_path)], tmp_path / "out")
+
+
+def test_classify_boxes_matches_by_iou():
+    truth = [[0, 0, 10, 10], [50, 50, 60, 60], [100, 100, 110, 110]]
+    detections = [([0, 0, 10, 11], "helmet"), ([51, 51, 61, 61], "head"), ([200, 200, 210, 210], "head")]
+    assert classify_boxes(truth, detections) == ["helmet", "head", "missed"]
 
 
 def test_write_reports(tmp_path):

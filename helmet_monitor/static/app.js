@@ -9,7 +9,12 @@ document.querySelectorAll(".tab").forEach((tab) => {
     document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t === tab));
     document.querySelectorAll(".view").forEach((v) =>
       v.classList.toggle("active", v.id === `view-${tab.dataset.view}`));
-    if (tab.dataset.view === "workers") loadWorkers();
+    if (tab.dataset.view === "workers") {
+      loadWorkers();
+      if (photoSource === "camera" && !capturedBlob) startCaptureCamera();
+    } else {
+      stopCaptureCamera();
+    }
     if (tab.dataset.view === "violations") loadViolations();
   });
 });
@@ -153,8 +158,12 @@ function drawResult(result) {
     ctx.strokeStyle = color;
     ctx.strokeRect(x, y, w, h);
 
-    const status = person.wearing_helmet ? "Helmet" : "NO HELMET";
-    const label = person.name ? `${status} · ${person.name}` : status;
+    const parts = [person.wearing_helmet ? "Hard hat" : "NO HARD HAT"];
+    if (person.name) parts.push(person.name);
+    if (person.timer) {
+      parts.push(person.timer.recorded ? "RECORDED" : `${Math.ceil(person.timer.remaining)}s`);
+    }
+    const label = parts.join(" · ");
     const textWidth = ctx.measureText(label).width + 10;
     ctx.fillStyle = color;
     ctx.fillRect(x, Math.max(0, y - 22), textWidth, 22);
@@ -224,24 +233,93 @@ function showWorkerMessage(text, ok) {
   $("worker-message").className = `message ${ok ? "ok" : "bad"}`;
 }
 
-$("worker-form").photo.addEventListener("change", (event) => {
-  const file = event.target.files[0];
-  $("photo-preview").hidden = !file;
-  if (file) $("photo-preview").src = URL.createObjectURL(file);
+// Photo source: file upload or a capture from the live camera.
+let photoSource = "upload";
+let captureStream = null;
+let capturedBlob = null;
+
+function showPreview(blobOrFile) {
+  $("photo-preview").hidden = !blobOrFile;
+  if (blobOrFile) $("photo-preview").src = URL.createObjectURL(blobOrFile);
+}
+
+function stopCaptureCamera() {
+  if (captureStream) captureStream.getTracks().forEach((track) => track.stop());
+  captureStream = null;
+  $("capture-video").srcObject = null;
+}
+
+async function startCaptureCamera() {
+  capturedBlob = null;
+  showPreview(null);
+  $("capture-video").hidden = false;
+  $("capture-take").hidden = false;
+  $("capture-retake").hidden = true;
+  try {
+    captureStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    $("capture-video").srcObject = captureStream;
+  } catch (error) {
+    showWorkerMessage(`Could not open the camera: ${error.message}`, false);
+  }
+}
+
+function setPhotoSource(source) {
+  photoSource = source;
+  document.querySelectorAll(".seg").forEach((b) => b.classList.toggle("active", b.dataset.source === source));
+  const camera = source === "camera";
+  $("photo-file").hidden = camera;
+  $("photo-file").required = !camera;
+  $("capture").hidden = !camera;
+  showPreview(camera ? null : $("photo-file").files[0]);
+  if (camera) startCaptureCamera();
+  else stopCaptureCamera();
+}
+
+document.querySelectorAll(".seg").forEach((button) =>
+  button.addEventListener("click", () => setPhotoSource(button.dataset.source)));
+
+$("capture-take").addEventListener("click", () => {
+  const video = $("capture-video");
+  if (!video.videoWidth) return;
+  const canvas = document.createElement("canvas");
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  canvas.getContext("2d").drawImage(video, 0, 0);
+  canvas.toBlob((blob) => {
+    capturedBlob = blob;
+    stopCaptureCamera();
+    showPreview(blob);
+    video.hidden = true;
+    $("capture-take").hidden = true;
+    $("capture-retake").hidden = false;
+  }, "image/jpeg", 0.92);
 });
+
+$("capture-retake").addEventListener("click", startCaptureCamera);
+
+$("photo-file").addEventListener("change", (event) => showPreview(event.target.files[0]));
 
 $("worker-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const form = event.target;
-  const button = form.querySelector("button");
+  const data = new FormData(form);
+  if (photoSource === "camera") {
+    if (!capturedBlob) {
+      showWorkerMessage("Capture a photo first.", false);
+      return;
+    }
+    data.set("photo", capturedBlob, "camera.jpg");
+  }
+  const button = form.querySelector("button[type=submit]");
   button.disabled = true;
   showWorkerMessage("Registering…", true);
   try {
-    const worker = await api("/api/workers", { method: "POST", body: new FormData(form) });
+    const worker = await api("/api/workers", { method: "POST", body: data });
     const note = worker.faces_in_photo > 1 ? " (several faces found; used the largest)" : "";
     showWorkerMessage(`Registered ${worker.name}${note}.`, true);
     form.reset();
-    $("photo-preview").hidden = true;
+    if (photoSource === "camera") startCaptureCamera();
+    else showPreview(null);
     loadWorkers();
   } catch (error) {
     showWorkerMessage(error.message, false);

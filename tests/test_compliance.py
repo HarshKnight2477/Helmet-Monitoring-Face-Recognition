@@ -73,40 +73,70 @@ class FakeClock:
         return self.now
 
 
+def run(tracker, clock, frame, seconds: float):
+    """Feed the same frame every 0.5 s for `seconds`; return all events."""
+    events = []
+    for _ in range(int(seconds / 0.5)):
+        clock.now += 0.5
+        events += tracker.update(frame).events
+    return events
+
+
 class TestTracker:
-    def test_needs_consecutive_frames_before_logging(self):
-        tracker = ViolationTracker("cam", confirm_frames=3, clock=FakeClock())
-        assert tracker.update(violation(1, "Asha")) == []
-        assert tracker.update(violation(1, "Asha")) == []
-        events = tracker.update(violation(1, "Asha"))
+    def test_records_only_after_ten_seconds_without_hard_hat(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=10, clock=clock)
+        assert tracker.update(violation(1, "Asha")).events == []
+        assert run(tracker, clock, violation(1, "Asha"), 9.5) == []
+        clock.now += 0.5
+        events = tracker.update(violation(1, "Asha")).events
         assert [(e.worker_id, e.name, e.camera_id) for e in events] == [(1, "Asha", "cam")]
 
-    def test_streak_resets_when_violation_disappears(self):
-        tracker = ViolationTracker("cam", confirm_frames=3, clock=FakeClock())
+    def test_timer_counts_down_then_shows_recorded(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=10, clock=clock)
         tracker.update(violation(1, "Asha"))
+        clock.now += 4
+        [timer] = tracker.update(violation(1, "Asha")).timers
+        assert (timer.elapsed, timer.remaining, timer.recorded) == (4, 6, False)
+        clock.now += 6
+        [timer] = tracker.update(violation(1, "Asha")).timers
+        assert timer.remaining == 0 and timer.recorded
+
+    def test_putting_hard_hat_on_resets_timer(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=10, grace_seconds=2, clock=clock)
+        run(tracker, clock, violation(1, "Asha"), 8)
+        run(tracker, clock, compliant(), 3)          # longer than the grace period
+        assert run(tracker, clock, violation(1, "Asha"), 9) == []
+
+    def test_brief_detection_dropout_does_not_reset_timer(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=10, grace_seconds=2, clock=clock)
         tracker.update(violation(1, "Asha"))
-        tracker.update(compliant())
-        assert tracker.update(violation(1, "Asha")) == []
+        run(tracker, clock, violation(1, "Asha"), 6)
+        run(tracker, clock, FrameResult(), 1.5)      # missed for 1.5 s
+        assert len(run(tracker, clock, violation(1, "Asha"), 3)) == 1
 
     def test_cooldown_limits_repeat_logging(self):
         clock = FakeClock()
-        tracker = ViolationTracker("cam", confirm_frames=1, cooldown_seconds=60, clock=clock)
-        assert len(tracker.update(violation(1, "Asha"))) == 1
+        tracker = ViolationTracker("cam", confirm_seconds=0, cooldown_seconds=60, clock=clock)
+        assert len(tracker.update(violation(1, "Asha")).events) == 1
         clock.now += 30
-        assert tracker.update(violation(1, "Asha")) == []
+        assert tracker.update(violation(1, "Asha")).events == []
         clock.now += 31
-        assert len(tracker.update(violation(1, "Asha"))) == 1
+        assert len(tracker.update(violation(1, "Asha")).events) == 1
 
     def test_cooldown_is_per_worker(self):
-        tracker = ViolationTracker("cam", confirm_frames=1, clock=FakeClock())
+        tracker = ViolationTracker("cam", confirm_seconds=0, clock=FakeClock())
         tracker.update(violation(1, "Asha"))
-        assert [e.name for e in tracker.update(violation(2, "Ravi"))] == ["Ravi"]
+        assert [e.name for e in tracker.update(violation(2, "Ravi")).events] == ["Ravi"]
 
     def test_unknown_violators_are_logged_without_identity(self):
-        tracker = ViolationTracker("cam", confirm_frames=1, clock=FakeClock())
-        event = tracker.update(violation())[0]
+        tracker = ViolationTracker("cam", confirm_seconds=0, clock=FakeClock())
+        event = tracker.update(violation()).events[0]
         assert event.worker_id is None and event.name == "Unknown" and event.similarity is None
 
-    def test_compliant_people_never_produce_events(self):
-        tracker = ViolationTracker("cam", confirm_frames=1, clock=FakeClock())
-        assert tracker.update(compliant()) == []
+    def test_compliant_people_have_no_timer_and_no_events(self):
+        update = ViolationTracker("cam", confirm_seconds=0, clock=FakeClock()).update(compliant())
+        assert update.events == [] and update.timers == [None]

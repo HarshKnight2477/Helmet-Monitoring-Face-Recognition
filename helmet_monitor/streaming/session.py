@@ -51,18 +51,22 @@ class CameraSession:
             frame = await self.queue.get()
             try:
                 result = await asyncio.to_thread(self.analyzer.analyze, frame)
-                events = self.tracker.update(result)
+                update = self.tracker.update(result)
                 logged = [await asyncio.to_thread(self.on_violation, event, frame)
-                          for event in events]
+                          for event in update.events]
             except Exception:  # one bad frame must not end the stream
                 logger.exception("Frame processing failed on camera %s", self.camera_id)
                 await send({"type": "error", "message": "Frame processing failed."})
                 continue
             self.frames_processed += 1
+            data = result.to_dict()
+            for person, timer in zip(data["people"], update.timers):
+                person["timer"] = timer.to_dict() if timer else None
             await send({
                 "type": "result",
                 "frame": {"width": int(frame.shape[1]), "height": int(frame.shape[0])},
-                **result.to_dict(),
+                **data,
+                "confirm_seconds": self.tracker.confirm_seconds,
                 "new_violations": logged,
             })
 

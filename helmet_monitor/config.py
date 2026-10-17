@@ -47,7 +47,10 @@ class Settings:
     face_match_threshold: float = field(default_factory=lambda: float(_env("FACE_MATCH_THRESHOLD", "0.45")))
 
     # Violation logging
-    violation_confirm_frames: int = field(default_factory=lambda: int(_env("VIOLATION_CONFIRM_FRAMES", "3")))
+    # Seconds a person must stay without a hard hat before it's recorded.
+    violation_confirm_seconds: float = field(default_factory=lambda: float(_env("VIOLATION_CONFIRM_SECONDS", "10")))
+    # Detection dropouts shorter than this don't reset the timer.
+    violation_grace_seconds: float = field(default_factory=lambda: float(_env("VIOLATION_GRACE_SECONDS", "2")))
     violation_cooldown_seconds: float = field(default_factory=lambda: float(_env("VIOLATION_COOLDOWN_SECONDS", "60")))
 
     # Streaming

@@ -22,7 +22,7 @@ def test_streams_results_and_logs_confirmed_violation(monitored):
     with client:
         with client.websocket_connect("/ws/monitor/cam-1") as ws:
             results = []
-            for _ in range(3):  # violation must persist for 3 frames before it's logged
+            for _ in range(3):
                 ws.send_bytes(jpeg_bytes())
                 results.append(ws.receive_json())
             assert "cam-1" in services.sessions
@@ -33,8 +33,11 @@ def test_streams_results_and_logs_confirmed_violation(monitored):
     assert first["frame"] == {"width": 320, "height": 240}
     assert first["without_helmet"] == 1
     assert first["people"][0]["name"] == "Asha"
-    assert [len(r["new_violations"]) for r in results] == [0, 0, 1]
-    assert results[2]["new_violations"][0]["name"] == "Asha"
+    # Recorded once (confirm time is 0 in tests), then held back by the cooldown.
+    assert [len(r["new_violations"]) for r in results] == [1, 0, 0]
+    assert results[0]["new_violations"][0]["name"] == "Asha"
+    assert first["people"][0]["timer"] == {"elapsed": 0.0, "remaining": 0.0, "recorded": True}
+    assert first["confirm_seconds"] == 0
 
     assert record.worker_name == "Asha" and record.snapshot
     assert services.sessions == {}  # session removed on disconnect

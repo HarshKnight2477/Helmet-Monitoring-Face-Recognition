@@ -71,7 +71,7 @@ def settings(tmp_path) -> Settings:
         model_path=tmp_path / "missing.pt",
         database_path=tmp_path / "test.db",
         snapshot_dir=tmp_path / "snapshots",
-        violation_confirm_frames=3,
+        violation_confirm_seconds=0,  # record on first sighting; timer logic is tested in test_compliance
         violation_cooldown_seconds=60,
         face_match_threshold=0.45,
     )

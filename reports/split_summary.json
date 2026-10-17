@@ -3,27 +3,43 @@
     "helmet",
     "head"
   ],
+  "label_map": {
+    "with helmet": "head",
+    "without helmet": "head"
+  },
   "seed": 42,
+  "sources": {
+    "hard_hat_workers": {
+      "test": 500,
+      "val": 1000,
+      "train": 3500
+    },
+    "BikesHelmets": {
+      "test": 76,
+      "val": 153,
+      "train": 535
+    }
+  },
   "splits": {
-    "test": {
-      "images": 500,
+    "train": {
+      "images": 4035,
       "boxes": {
-        "helmet": 1993,
-        "head": 625
+        "helmet": 13198,
+        "head": 5083
       }
     },
     "val": {
-      "images": 1000,
+      "images": 1153,
       "boxes": {
         "helmet": 3775,
-        "head": 1076
+        "head": 1393
       }
     },
-    "train": {
-      "images": 3500,
+    "test": {
+      "images": 576,
       "boxes": {
-        "helmet": 13198,
-        "head": 4084
+        "helmet": 1993,
+        "head": 760
       }
     }
   },

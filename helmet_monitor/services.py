@@ -47,8 +47,9 @@ class Services:
         return self._analyzer
 
     def new_session(self, camera_id: str) -> CameraSession:
-        tracker = ViolationTracker(camera_id, self.settings.violation_confirm_frames,
-                                   self.settings.violation_cooldown_seconds)
+        tracker = ViolationTracker(camera_id, self.settings.violation_confirm_seconds,
+                                   self.settings.violation_cooldown_seconds,
+                                   self.settings.violation_grace_seconds)
         return CameraSession(camera_id, self.analyzer, tracker, self.record_violation,
                              self.settings.frame_queue_size)
 
@@ -68,7 +69,7 @@ class Services:
             image = frame.copy()
             x1, y1, x2, y2 = event.person.head.box.to_list()
             cv2.rectangle(image, (x1, y1), (x2, y2), RED, 3)
-            cv2.putText(image, f"NO HELMET: {event.name}", (x1, max(20, y1 - 10)),
+            cv2.putText(image, f"NO HARD HAT: {event.name}", (x1, max(20, y1 - 10)),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.7, RED, 2)
             name = f"{datetime.now():%Y%m%d_%H%M%S_%f}_{event.camera_id}.jpg"
             self.settings.snapshot_dir.mkdir(parents=True, exist_ok=True)

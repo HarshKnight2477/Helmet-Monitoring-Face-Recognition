@@ -1,0 +1,24 @@
+{
+  "before": {
+    "weights": "v1.0 (hard hats only)",
+    "subset": "test split",
+    "images": 56,
+    "bike_helmets": 85,
+    "flagged_as_no_hard_hat": 5,
+    "accepted_as_hard_hat": 67,
+    "missed": 13,
+    "accepted_rate_of_detected": 0.9306,
+    "flagged_rate_of_detected": 0.0694
+  },
+  "after": {
+    "weights": "v1.1 (with bike-helmet negatives)",
+    "subset": "test split",
+    "images": 56,
+    "bike_helmets": 85,
+    "flagged_as_no_hard_hat": 69,
+    "accepted_as_hard_hat": 3,
+    "missed": 13,
+    "accepted_rate_of_detected": 0.0417,
+    "flagged_rate_of_detected": 0.9583
+  }
+}

@@ -44,8 +44,8 @@
         <aside class="side">
           <div class="stats">
             <div class="stat"><span id="stat-people">0</span><small>People</small></div>
-            <div class="stat ok"><span id="stat-helmet">0</span><small>With helmet</small></div>
-            <div class="stat bad"><span id="stat-nohelmet">0</span><small>No helmet</small></div>
+            <div class="stat ok"><span id="stat-helmet">0</span><small>With hard hat</small></div>
+            <div class="stat bad"><span id="stat-nohelmet">0</span><small>No hard hat</small></div>
             <div class="stat"><span id="stat-latency">–</span><small>ms / frame</small></div>
           </div>
           <div class="panel">
@@ -63,7 +63,22 @@
           <h2>Register worker</h2>
           <label>Full name <input name="name" required maxlength="100"></label>
           <label>Email (optional) <input name="email" type="email" maxlength="200"></label>
-          <label>Face photo <input name="photo" type="file" accept="image/*" required></label>
+          <div class="field">
+            <span class="field-label">Face photo</span>
+            <div class="segmented" role="tablist">
+              <button type="button" class="seg active" data-source="upload" role="tab">Upload photo</button>
+              <button type="button" class="seg" data-source="camera" role="tab">Use camera</button>
+            </div>
+          </div>
+          <input id="photo-file" name="photo" type="file" accept="image/*" required>
+          <div id="capture" class="capture" hidden>
+            <video id="capture-video" class="preview" autoplay playsinline muted></video>
+            <div class="capture-actions">
+              <button type="button" id="capture-take">Capture</button>
+              <button type="button" id="capture-retake" hidden>Retake</button>
+            </div>
+            <p class="hint">Look straight at the camera in good light, without a hard hat.</p>
+          </div>
           <img id="photo-preview" class="preview" alt="" hidden>
           <button class="primary" type="submit">Register</button>
           <p id="worker-message" class="message" role="status"></p>

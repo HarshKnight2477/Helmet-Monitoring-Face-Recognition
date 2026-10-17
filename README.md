@@ -1,6 +1,6 @@
 # AI-Based Helmet Monitoring & Face Recognition System
 
-A real-time computer vision system that detects workers without helmets and identifies who they are. A **YOLOv8** detector finds helmets and bare heads, **InsightFace** recognises faces, bounding-box spatial verification links each face to the right head, and a **FastAPI + WebSockets** backend streams results to a live web dashboard.
+A real-time computer vision system that detects workers without hard hats and identifies who they are. A **YOLOv8** detector finds worker hard hats (of any colour) and heads without one, and doesn't accept bike helmets as PPE; **InsightFace** recognises faces, bounding-box spatial verification links each face to the right head, and a **FastAPI + WebSockets** backend streams results to a live web dashboard.
 
 ## How it works
 
@@ -20,14 +20,15 @@ A real-time computer vision system that detects workers without helmets and iden
                                 └──────────────────────────────────────────────────────┘
 ```
 
-1. **Helmet detection** ([`detection/detector.py`](helmet_monitor/detection/detector.py)): a YOLOv8 model trained on two classes, `helmet` (head wearing a helmet) and `head` (bare head).
+1. **Hard hat detection** ([`detection/detector.py`](helmet_monitor/detection/detector.py)): a YOLOv8 model trained on two classes. `helmet` is a head wearing a worker hard hat. `head` is a head without one, which includes heads wearing bike helmets.
 2. **Spatial verification** ([`compliance/spatial.py`](helmet_monitor/compliance/spatial.py)):
    - When a `helmet` box and a `head` box overlap on the same person (IoU ≥ 0.5), only the more confident one is kept, so nobody counts as both compliant and violating.
    - A face is linked to a head only if the face's centre lies inside that head's region. The region is extended downwards, because a helmet box often covers the helmet more than the face. Matching is one-to-one, closest first.
 3. **Face recognition** ([`recognition/`](helmet_monitor/recognition/)): InsightFace `buffalo_l` (RetinaFace detector + ArcFace) produces a 512-dimensional embedding. Embeddings are **L2-normalised**, so a matrix dot product gives the **cosine similarity** to every registered worker at once. Below the threshold (default 0.45), the person is `Unknown`.
 4. **Violation tracking** ([`compliance/tracker.py`](helmet_monitor/compliance/tracker.py)):
-   - A violation is logged only after it persists for 3 consecutive frames, which filters out one-frame false positives.
-   - After that, a worker is logged at most once per 60 s, so one person standing bare-headed for a minute gives one record, not hundreds.
+   - A violation is recorded only after a person has been without a hard hat for **10 seconds** straight. The live view shows a countdown above their head.
+   - Putting a hard hat on, or leaving the frame for more than 2 s, resets the timer. Shorter detection dropouts don't.
+   - After recording, the same worker isn't recorded again for 60 s.
 5. **Async real-time backend** ([`streaming/session.py`](helmet_monitor/streaming/session.py), [`api/websocket.py`](helmet_monitor/api/websocket.py)):
    - Each camera gets its own WebSocket session. Receiving and processing run as separate asyncio tasks joined by a small queue.
    - Inference runs in a worker thread, so the event loop stays responsive.
@@ -35,35 +36,50 @@ A real-time computer vision system that detects workers without helmets and iden
 
 ## Results
 
-YOLOv8s trained for 60 epochs on the [Hard Hat Detection](https://www.kaggle.com/datasets/andrewmvd/hard-hat-detection) dataset (3,500 train / 1,000 validation / 500 test images, seed 42) on an RTX 5060 Laptop GPU, in 39 minutes. Scores below are on the **held-out test split**: 500 images and 2,618 heads that were never used for training or for choosing the best epoch.
+YOLOv8s trained for 59 epochs (seed 42) on an RTX 5060 Laptop GPU, in 44 minutes, on two public datasets:
 
-| Metric | Test split |
-|---|---|
-| **mAP@0.5** | **95.5%** |
-| **mAP@0.5:0.95** | **63.4%** |
-| Precision | 92.1% |
-| Recall | 91.7% |
-| Inference | 5.2 ms / image (RTX 5060) |
+- [Hard Hat Detection](https://www.kaggle.com/datasets/andrewmvd/hard-hat-detection): 5,000 construction images. Its `helmet` boxes are worker hard hats.
+- [Helmet Detection](https://www.kaggle.com/datasets/andrewmvd/helmet-detection): 764 motorbike images. Every rider's head, **with or without a bike helmet**, is labelled `head` (no hard hat).
+
+Each dataset is split 70/20/10 into train/validation/test. All scores below are on the **held-out test split**, which was never used for training or for choosing the best epoch.
+
+| Metric | Full test set (576 images, 2,753 heads) | Hard-hat images only (500 images) |
+|---|---|---|
+| **mAP@0.5** | **93.8%** | **95.6%** |
+| **mAP@0.5:0.95** | **62.1%** | **63.3%** |
+| Precision | 88.5% | 91.6% |
+| Recall | 90.7% | 91.2% |
 
 | Class | AP@0.5 | AP@0.5:0.95 |
 |---|---|---|
-| helmet | 96.6% | 64.3% |
-| head (no helmet) | 94.5% | 62.4% |
+| helmet (hard hat) | 96.6% | 64.0% |
+| head (no hard hat) | 91.1% | 60.1% |
 
-Full report: [`reports/detection_metrics.md`](reports/detection_metrics.md). Training curves, the precision–recall curve and the confusion matrix are in [`reports/figures/`](reports/figures/).
+Inference: 5.2 ms per image on the RTX 5060.
 
-<p align="center"><img src="reports/figures/example_detection.jpg" width="420" alt="Example: two workers with helmets (green) and one without (red), from the test split"></p>
+### Bike helmets are not hard hats
 
-To reproduce these numbers, see [Training the detector](#training-the-detector).
+A model trained on hard hats alone (v1.0) treats any helmet as PPE. Adding motorbike riders as negatives fixed that, with no loss on hard hats (95.5% → 95.6% mAP@0.5 on the same hard-hat test images):
+
+| Test-split bike helmets (72 detected) | v1.0 (hard hats only) | **v1.1 (with bike negatives)** |
+|---|---|---|
+| Wrongly accepted as a hard hat | 93.1% | **4.2%** |
+| Correctly flagged as no hard hat | 6.9% | **95.8%** |
+
+<p align="center"><img src="reports/figures/bike_helmet_before_after.jpg" width="640" alt="Bike-helmet test images: v1.0 marks every bike helmet as a hard hat (green), v1.1 flags them all (red)"></p>
+
+<p align="center"><img src="reports/figures/example_detection.jpg" width="360" alt="Worker test image: two hard hats (green) and one worker without (red)"></p>
+
+Full reports: [`reports/detection_metrics.md`](reports/detection_metrics.md) and [`reports/bike_helmet_check.json`](reports/bike_helmet_check.json). Training curves, the precision–recall curve and the confusion matrix are in [`reports/figures/`](reports/figures/). To reproduce, see [Training the detector](#training-the-detector).
 
 ## Features
 
-- Live webcam monitoring in the browser, with boxes, names and compliance counts drawn over the video
-- Worker registration from a single photo, with the face embedding stored in SQLite
+- Live webcam monitoring in the browser, with boxes, names, compliance counts and a 10-second violation countdown drawn over the video
+- Worker registration from an uploaded photo **or a live camera capture**, with the face embedding stored in SQLite
 - Violation log with annotated snapshots and a per-worker summary
 - Several cameras at once, one WebSocket each, sharing one set of models
 - REST API with interactive docs at `/docs`
-- 63 automated tests that run in about 2 seconds, with no model downloads (models are replaced by fakes)
+- 69 automated tests that run in about 2 seconds, with no model downloads (models are replaced by fakes)
 
 ## Getting started
 
@@ -83,7 +99,7 @@ pip install -r requirements.txt
    uvicorn helmet_monitor.main:app --port 8000
    ```
 3. Open http://localhost:8000:
-   - **Workers:** register people with a clear, front-facing photo.
+   - **Workers:** register people by uploading a clear, front-facing photo, or with *Use camera* → *Capture*.
    - **Live monitor:** click *Start camera*.
    - **Violations:** review the log and snapshots.
 
@@ -103,7 +119,7 @@ docker run -p 8000:8000 helmet-monitor
 [`training/helmet_yolov8_kaggle.ipynb`](training/helmet_yolov8_kaggle.ipynb) trains and evaluates the model on Kaggle's free GPU:
 
 1. On Kaggle, create a notebook and choose *File → Import Notebook*, then upload the `.ipynb`.
-2. *Add Input*: **Hard Hat Detection** by andrewmvd (5,000 images, Pascal VOC).
+2. *Add Input*: **Hard Hat Detection** and **Helmet Detection**, both by andrewmvd.
 3. Set *Accelerator* to **GPU** and *Internet* to **On**, then click *Run All* (about 1–2 hours).
 4. Download `helmet_yolov8.pt` into `models/` and unzip `reports.zip` into `reports/`.
 
@@ -112,12 +128,14 @@ With an NVIDIA GPU, the same steps run locally. The published model was trained 
 ```bash
 pip install kagglehub
 python -c "import kagglehub; print(kagglehub.dataset_download('andrewmvd/hard-hat-detection'))"
-python training/prepare_dataset.py --annotations <path>/annotations --images <path>/images --output data/helmet-yolo
-yolo detect train data=data/helmet-yolo/data.yaml model=yolov8s.pt epochs=60 imgsz=640 batch=16 patience=20 seed=42 project=runs name=helmet
+python -c "import kagglehub; print(kagglehub.dataset_download('andrewmvd/helmet-detection'))"
+python training/prepare_dataset.py --annotations <hard-hat>/annotations <bike>/annotations --images <hard-hat>/images <bike>/images --output data/helmet-yolo
+yolo detect train data=data/helmet-yolo/data.yaml model=yolov8s.pt epochs=60 imgsz=640 batch=16 patience=20 seed=42 hsv_h=0.05 project=runs name=helmet
 python training/evaluate.py --weights runs/helmet/weights/best.pt --data data/helmet-yolo/data.yaml --split test
+python training/check_bike_helmets.py --weights runs/helmet/weights/best.pt --annotations <bike>/annotations --images <bike>/images --manifest data/helmet-yolo/test_manifest.json
 ```
 
-`prepare_dataset.py` converts VOC boxes to YOLO format, drops the `person` class, and makes a reproducible 70/20/10 split (seed 42).
+`prepare_dataset.py` converts VOC boxes to YOLO format and drops the `person` class. It relabels every motorbike head, with or without a helmet, as `head` (no hard hat), so the detector learns that a bike helmet is not PPE. Each dataset gets its own reproducible 70/20/10 split (seed 42). `hsv_h=0.05` adds stronger hue shifts during training, so hard hats of any colour are recognised.
 
 ## API
 

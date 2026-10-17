@@ -93,7 +93,7 @@ def test_violation_log_and_snapshot(client_for):
         session = services.new_session("cam-1")
         frame = np.zeros((240, 320, 3), dtype=np.uint8)
         result = services.analyzer.analyze(frame)
-        events = [e for _ in range(3) for e in session.tracker.update(result)]  # confirm_frames=3
+        events = [e for _ in range(3) for e in session.tracker.update(result).events]
         assert len(events) == 1
         services.record_violation(events[0], frame)
 

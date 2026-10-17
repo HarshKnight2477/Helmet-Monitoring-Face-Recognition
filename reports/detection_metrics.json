@@ -2,20 +2,20 @@
   "weights": "helmet_yolov8.pt",
   "split": "test",
   "image_size": 640,
-  "evaluated_on": "2026-10-17",
-  "map50": 0.9554,
-  "map50_95": 0.6338,
-  "precision": 0.9207,
-  "recall": 0.9174,
+  "evaluated_on": "2026-10-18",
+  "map50": 0.9384,
+  "map50_95": 0.6205,
+  "precision": 0.8853,
+  "recall": 0.9068,
   "per_class": {
     "helmet": {
-      "ap50": 0.9658,
-      "ap50_95": 0.6433
+      "ap50": 0.9659,
+      "ap50_95": 0.6404
     },
     "head": {
-      "ap50": 0.945,
-      "ap50_95": 0.6244
+      "ap50": 0.9109,
+      "ap50_95": 0.6006
     }
   },
-  "inference_ms_per_image": 5.19
+  "inference_ms_per_image": 5.21
 }
