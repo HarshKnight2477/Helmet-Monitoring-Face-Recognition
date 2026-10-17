@@ -29,6 +29,7 @@ def test_health_reports_missing_models(client_for):
         health = client.get("/api/health").json()
     assert health["status"] == "degraded"
     assert not health["detector_loaded"] and not health["face_model_loaded"]
+    assert health["face_device"] is None
 
 
 def test_health_ok_when_models_loaded(client_for):

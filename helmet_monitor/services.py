@@ -96,7 +96,8 @@ def build_services(settings: Settings) -> Services:
 
     try:
         services.embedder = InsightFaceEmbedder(settings.face_model_name,
-                                                settings.face_detection_size)
+                                                settings.face_detection_size,
+                                                settings.face_device)
     except Exception as error:
         services.errors["face_model"] = str(error)
         logger.warning("Face model not loaded: %s", error)

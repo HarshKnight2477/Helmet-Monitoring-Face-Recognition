@@ -1,0 +1,13 @@
+# NVIDIA GPU setup (Windows/Linux). Install a CUDA build of PyTorch first, e.g.:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+# then:  pip install -r requirements-gpu.txt
+fastapi>=0.110
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+numpy>=1.26
+opencv-python-headless>=4.9
+ultralytics>=8.2
+insightface>=0.7.3
+# GPU ONNX Runtime for InsightFace; the extras pull CUDA + cuDNN as pip packages,
+# so no system-wide CUDA install is needed. Replaces the CPU "onnxruntime" package.
+onnxruntime-gpu[cuda,cudnn]>=1.21

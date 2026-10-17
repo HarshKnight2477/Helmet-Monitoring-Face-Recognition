@@ -27,6 +27,7 @@ class HealthOut(BaseModel):
     status: str
     detector_loaded: bool
     face_model_loaded: bool
+    face_device: str | None
     registered_workers: int
     active_cameras: int
     errors: dict[str, str]

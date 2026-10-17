@@ -58,6 +58,15 @@ Each dataset is split 70/20/10 into train/validation/test. All scores below are 
 
 Inference: 5.2 ms per image on the RTX 5060.
 
+**Full pipeline speed** (YOLOv8 + InsightFace + matching, 1280×720 frame with 3 people, RTX 5060 Laptop):
+
+| Face model on | Face detection + embedding | Whole frame |
+|---|---|---|
+| CPU (i7-14650HX) | 330 ms | 373 ms |
+| **GPU (CUDA)** | **23 ms** | **33 ms** (~30 FPS) |
+
+GPU and CPU produce identical embeddings (cosine similarity 1.0000), so only the speed changes.
+
 ### Bike helmets are not hard hats
 
 A model trained on hard hats alone (v1.0) treats any helmet as PPE. Adding motorbike riders as negatives fixed that, with no loss on hard hats (95.5% → 95.6% mAP@0.5 on the same hard-hat test images):
@@ -80,7 +89,7 @@ Full reports: [`reports/detection_metrics.md`](reports/detection_metrics.md) and
 - Violation log with annotated snapshots and a per-worker summary
 - Several cameras at once, one WebSocket each, sharing one set of models
 - REST API with interactive docs at `/docs`
-- 72 automated tests that run in about 2 seconds, with no model downloads (models are replaced by fakes)
+- 74 automated tests that run in about 2 seconds, with no model downloads (models are replaced by fakes)
 
 ## Getting started
 
@@ -104,7 +113,18 @@ pip install -r requirements.txt
    - **Live monitor:** click *Start camera*.
    - **Violations:** review the log and snapshots.
 
-The InsightFace model (~300 MB) downloads automatically on first start. `GET /api/health` reports whether both models loaded.
+The InsightFace model (~300 MB) downloads automatically on first start. `GET /api/health` reports whether both models loaded and whether face recognition runs on `cuda` or `cpu`.
+
+### NVIDIA GPU (recommended)
+
+On a machine with an NVIDIA GPU, install the GPU packages instead. They make the whole pipeline about 10× faster:
+
+```bash
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+pip install -r requirements-gpu.txt
+```
+
+`FACE_DEVICE=auto` (the default) uses the GPU when it's available. Set `FACE_DEVICE=cpu` or `cuda` to force one.
 
 Settings such as thresholds, cooldown and file paths can be changed through environment variables; see [`.env.example`](.env.example).
 

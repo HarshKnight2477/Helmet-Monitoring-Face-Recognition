@@ -26,6 +26,7 @@ def health(services: Services = Depends(get_services)):
         status="ok" if ready else "degraded",
         detector_loaded=services.detector is not None,
         face_model_loaded=services.embedder is not None,
+        face_device=getattr(services.embedder, "device", None),
         registered_workers=len(services.gallery),
         active_cameras=len(services.sessions),
         errors=services.errors,

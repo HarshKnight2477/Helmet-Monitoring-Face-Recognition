@@ -45,6 +45,8 @@ class Settings:
     face_model_name: str = field(default_factory=lambda: _env("FACE_MODEL_NAME", "buffalo_l"))
     face_detection_size: int = field(default_factory=lambda: int(_env("FACE_DETECTION_SIZE", "640")))
     face_match_threshold: float = field(default_factory=lambda: float(_env("FACE_MATCH_THRESHOLD", "0.45")))
+    # auto = GPU if onnxruntime-gpu + CUDA are available, else CPU. Or force "cuda" / "cpu".
+    face_device: str = field(default_factory=lambda: _env("FACE_DEVICE", "auto"))
 
     # Violation logging
     # Seconds a person must stay without a hard hat before it's recorded.

@@ -62,3 +62,15 @@ def test_largest_face():
     small, big = face_at(0, 0, 10, 10), face_at(0, 0, 50, 50)
     assert largest_face([small, big]) is big
     assert largest_face([]) is None
+
+
+def test_cpu_device_forces_cpu_provider():
+    pytest.importorskip("onnxruntime")
+    from helmet_monitor.recognition.embedder import select_providers
+    assert select_providers("cpu") == ["CPUExecutionProvider"]
+
+
+def test_auto_device_always_keeps_cpu_fallback():
+    pytest.importorskip("onnxruntime")
+    from helmet_monitor.recognition.embedder import select_providers
+    assert select_providers("auto")[-1] == "CPUExecutionProvider"
