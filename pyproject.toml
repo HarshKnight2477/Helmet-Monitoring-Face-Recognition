@@ -1,0 +1,10 @@
+[project]
+name = "helmet-monitor"
+version = "1.0.0"
+description = "Real-time helmet compliance monitoring with YOLOv8 and InsightFace face recognition"
+readme = "README.md"
+requires-python = ">=3.10"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]

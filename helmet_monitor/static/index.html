@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Helmet Monitor</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">⛑</span>
+      <span>Helmet Monitor</span>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-view="monitor" role="tab">Live monitor</button>
+      <button class="tab" data-view="workers" role="tab">Workers</button>
+      <button class="tab" data-view="violations" role="tab">Violations</button>
+    </nav>
+  </header>
+
+  <div id="health" class="banner" hidden></div>
+
+  <main>
+    <!-- Live monitor -->
+    <section id="view-monitor" class="view active">
+      <div class="monitor-layout">
+        <div class="panel stage-panel">
+          <div class="controls">
+            <label>Camera ID <input id="camera-id" value="cam-1" maxlength="40"></label>
+            <label>FPS
+              <select id="fps"><option>2</option><option>4</option><option selected>6</option><option>10</option></select>
+            </label>
+            <button id="start" class="primary">Start camera</button>
+            <button id="stop" hidden>Stop</button>
+          </div>
+          <div class="stage">
+            <video id="video" autoplay playsinline muted></video>
+            <canvas id="overlay"></canvas>
+            <div id="stage-empty" class="stage-empty">Camera is off</div>
+          </div>
+        </div>
+
+        <aside class="side">
+          <div class="stats">
+            <div class="stat"><span id="stat-people">0</span><small>People</small></div>
+            <div class="stat ok"><span id="stat-helmet">0</span><small>With helmet</small></div>
+            <div class="stat bad"><span id="stat-nohelmet">0</span><small>No helmet</small></div>
+            <div class="stat"><span id="stat-latency">–</span><small>ms / frame</small></div>
+          </div>
+          <div class="panel">
+            <h2>Live events</h2>
+            <ul id="events" class="events"><li class="muted">No violations yet</li></ul>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Workers -->
+    <section id="view-workers" class="view">
+      <div class="two-col">
+        <form id="worker-form" class="panel">
+          <h2>Register worker</h2>
+          <label>Full name <input name="name" required maxlength="100"></label>
+          <label>Email (optional) <input name="email" type="email" maxlength="200"></label>
+          <label>Face photo <input name="photo" type="file" accept="image/*" required></label>
+          <img id="photo-preview" class="preview" alt="" hidden>
+          <button class="primary" type="submit">Register</button>
+          <p id="worker-message" class="message" role="status"></p>
+        </form>
+        <div class="panel">
+          <h2>Registered workers <span id="worker-count" class="count"></span></h2>
+          <table class="table">
+            <thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Registered</th><th></th></tr></thead>
+            <tbody id="workers"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Violations -->
+    <section id="view-violations" class="view">
+      <div class="stats wide">
+        <div class="stat bad"><span id="sum-total">0</span><small>Total violations</small></div>
+        <div class="stat"><span id="sum-today">0</span><small>Today</small></div>
+        <div class="stat"><span id="sum-top">–</span><small>Most frequent</small></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Violation log</h2>
+          <button id="refresh-violations">Refresh</button>
+        </div>
+        <table class="table">
+          <thead><tr><th>Snapshot</th><th>Worker</th><th>Match</th><th>Camera</th><th>Time</th></tr></thead>
+          <tbody id="violations"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
