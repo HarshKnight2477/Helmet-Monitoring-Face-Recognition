@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
-from helmet_monitor.domain import FrameResult, PersonResult
+from helmet_monitor.domain import Box, FrameResult, Identity, PersonResult
 
 UNKNOWN_KEY = "unknown"
 
@@ -53,13 +53,13 @@ class TrackerUpdate:
 class _Streak:
     started: float
     last_seen: float
+    box: Box
+    identity: Identity | None = None
 
 
-def _key(person: PersonResult) -> str:
-    # Unidentified violators share one key: they can't be told apart reliably.
-    if person.identity and person.identity.is_known:
-        return f"worker:{person.identity.worker_id}"
-    return UNKNOWN_KEY
+# A head overlapping a known worker's last position by this much is assumed to be
+# them, even in frames where their face isn't recognised (looking down, turned away).
+CARRY_OVER_IOU = 0.3
 
 
 class ViolationTracker:
@@ -75,9 +75,11 @@ class ViolationTracker:
 
     def update(self, result: FrameResult) -> TrackerUpdate:
         now = self._clock()
+        keys = self._assign_keys(result.people)  # person index -> key, violators only
+
         seen: dict[str, PersonResult] = {}
-        for person in result.violations:
-            key = _key(person)
+        for index, key in keys.items():
+            person = result.people[index]
             current = seen.get(key)
             if current is None or person.head.confidence > current.head.confidence:
                 seen[key] = person
@@ -89,31 +91,59 @@ class ViolationTracker:
 
         events = []
         for key, person in seen.items():
-            streak = self._streaks.setdefault(key, _Streak(started=now, last_seen=now))
+            streak = self._streaks.setdefault(key, _Streak(started=now, last_seen=now, box=person.head.box))
             streak.last_seen = now
+            streak.box = person.head.box
+            if person.identity and person.identity.is_known:
+                streak.identity = person.identity
             if now - streak.started >= self.confirm_seconds and not self._in_cooldown(key, now):
                 self._last_recorded[key] = now
-                identity = person.identity
+                identity = streak.identity
                 events.append(ViolationEvent(
                     camera_id=self.camera_id,
                     worker_id=identity.worker_id if identity else None,
                     name=identity.name if identity else "Unknown",
-                    similarity=identity.similarity if identity and identity.is_known else None,
+                    similarity=identity.similarity if identity else None,
                     confidence=person.head.confidence,
                     person=person,
                 ))
 
         timers = []
-        for person in result.people:
-            if not person.is_violation:
+        for index, person in enumerate(result.people):
+            if index not in keys:
                 timers.append(None)
                 continue
-            key = _key(person)
+            key = keys[index]
             elapsed = now - self._streaks[key].started
             timers.append(ViolationTimer(elapsed=elapsed,
                                          remaining=max(0.0, self.confirm_seconds - elapsed),
                                          recorded=self._in_cooldown(key, now)))
         return TrackerUpdate(events=events, timers=timers)
+
+    def _assign_keys(self, people: list[PersonResult]) -> dict[int, str]:
+        keys: dict[int, str] = {}
+        for index, person in enumerate(people):
+            if person.is_violation and person.identity and person.identity.is_known:
+                keys[index] = f"worker:{person.identity.worker_id}"
+
+        # Unrecognised bare heads: continue a known worker's streak at the same spot,
+        # unless that worker is visibly identified elsewhere in this frame.
+        taken = set(keys.values())
+        for index, person in enumerate(people):
+            if not person.is_violation or index in keys:
+                continue
+            best_key, best_iou = None, CARRY_OVER_IOU
+            for key, streak in self._streaks.items():
+                if key == UNKNOWN_KEY or key in taken:
+                    continue
+                overlap = streak.box.iou(person.head.box)
+                if overlap >= best_iou:
+                    best_key, best_iou = key, overlap
+            if best_key:
+                taken.add(best_key)
+            # Other unidentified violators share one key: they can't be told apart reliably.
+            keys[index] = best_key or UNKNOWN_KEY
+        return keys
 
     def _in_cooldown(self, key: str, now: float) -> bool:
         last = self._last_recorded.get(key)

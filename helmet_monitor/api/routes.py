@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import sqlite3
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
@@ -60,7 +61,8 @@ async def register_worker(
     if image is None:
         raise HTTPException(422, "The upload is not a readable image.")
 
-    faces = services.embedder.detect(image)
+    # Off the event loop, so live camera streams keep flowing during registration.
+    faces = await asyncio.to_thread(services.embedder.detect, image)
     face = largest_face(faces)
     if face is None:
         raise HTTPException(422, "No face found in the photo. Use a clear, front-facing photo.")

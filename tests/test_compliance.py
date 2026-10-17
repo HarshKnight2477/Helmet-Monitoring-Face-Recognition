@@ -140,3 +140,41 @@ class TestTracker:
     def test_compliant_people_have_no_timer_and_no_events(self):
         update = ViolationTracker("cam", confirm_seconds=0, clock=FakeClock()).update(compliant())
         assert update.events == [] and update.timers == [None]
+
+
+def bare_head_at(x: float, identity: Identity | None = None) -> PersonResult:
+    return PersonResult(head=HeadState(Box(x, 0, x + 50, 50), False, 0.9), identity=identity)
+
+
+ASHA = Identity(1, "Asha", 0.8)
+
+
+class TestIdentityCarryOver:
+    def test_timer_continues_when_face_is_briefly_unrecognised(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=10, clock=clock)
+        tracker.update(FrameResult(people=[bare_head_at(100, ASHA)]))
+        clock.now += 4
+        tracker.update(FrameResult(people=[bare_head_at(102, ASHA)]))
+        # Looking down: same spot, no face match, for 6 more seconds.
+        events = []
+        for step in range(12):
+            clock.now += 0.5
+            update = tracker.update(FrameResult(people=[bare_head_at(104 + step)]))
+            events += update.events
+        assert [(e.worker_id, e.name) for e in events] == [(1, "Asha")]
+        assert update.timers[0].recorded
+
+    def test_stranger_elsewhere_is_not_merged_with_worker(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=10, clock=clock)
+        tracker.update(FrameResult(people=[bare_head_at(100, ASHA)]))
+        clock.now += 1
+        update = tracker.update(FrameResult(people=[bare_head_at(100, ASHA), bare_head_at(400)]))
+        assert update.timers[0].elapsed == 1 and update.timers[1].elapsed == 0
+
+    def test_identified_worker_is_not_also_claimed_by_an_overlapping_stranger(self):
+        clock = FakeClock()
+        tracker = ViolationTracker("cam", confirm_seconds=0, clock=clock)
+        events = tracker.update(FrameResult(people=[bare_head_at(100, ASHA), bare_head_at(110)])).events
+        assert sorted(e.name for e in events) == ["Asha", "Unknown"]

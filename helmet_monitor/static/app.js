@@ -69,33 +69,44 @@ let awaitingResult = false;
 let lastSent = 0;
 
 async function startMonitoring() {
+  if (stream || socket) return;
+  $("start").disabled = true;  // ignore double clicks while the camera opens
   const cameraId = $("camera-id").value.trim() || "cam-1";
   try {
     stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
   } catch (error) {
     alert(`Could not open the camera: ${error.message}`);
     return;
+  } finally {
+    $("start").disabled = false;
   }
   video.srcObject = stream;
   $("stage-empty").hidden = true;
   $("start").hidden = true;
   $("stop").hidden = false;
+  checkHealth();  // clears any banner left by an earlier session
 
   const scheme = location.protocol === "https:" ? "wss" : "ws";
-  socket = new WebSocket(`${scheme}://${location.host}/ws/monitor/${encodeURIComponent(cameraId)}`);
-  socket.binaryType = "arraybuffer";
-  socket.onmessage = (message) => handleMessage(JSON.parse(message.data));
-  socket.onclose = () => stopMonitoring();
-  socket.onopen = () => {
+  const ws = new WebSocket(`${scheme}://${location.host}/ws/monitor/${encodeURIComponent(cameraId)}`);
+  ws.binaryType = "arraybuffer";
+  ws.onmessage = (message) => handleMessage(JSON.parse(message.data));
+  // Only this connection may stop monitoring; a late close from an old one must not.
+  ws.onclose = () => { if (socket === ws) stopMonitoring(); };
+  ws.onopen = () => {
     const interval = 1000 / Number($("fps").value);
     sendTimer = setInterval(sendFrame, interval);
   };
+  socket = ws;
 }
 
 function stopMonitoring() {
   clearInterval(sendTimer);
   sendTimer = null;
-  if (socket && socket.readyState <= WebSocket.OPEN) socket.close();
+  if (socket) {
+    socket.onmessage = null;
+    socket.onclose = null;
+    if (socket.readyState <= WebSocket.OPEN) socket.close();
+  }
   socket = null;
   if (stream) stream.getTracks().forEach((track) => track.stop());
   stream = null;
@@ -124,12 +135,12 @@ function sendFrame() {
 }
 
 function handleMessage(message) {
+  awaitingResult = false;  // a reply arrived (result or error): the next frame may go
   if (message.type === "error") {
     $("health").hidden = false;
     $("health").textContent = message.message;
     return;
   }
-  awaitingResult = false;
   drawResult(message);
   $("stat-people").textContent = message.total_people;
   $("stat-helmet").textContent = message.with_helmet;
@@ -249,14 +260,25 @@ function stopCaptureCamera() {
   $("capture-video").srcObject = null;
 }
 
+function captureWanted() {
+  return photoSource === "camera" && $("view-workers").classList.contains("active");
+}
+
 async function startCaptureCamera() {
+  stopCaptureCamera();  // never hold two streams
   capturedBlob = null;
   showPreview(null);
   $("capture-video").hidden = false;
   $("capture-take").hidden = false;
   $("capture-retake").hidden = true;
   try {
-    captureStream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    const opened = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+    // The user may have switched to upload or left the tab while the camera was opening.
+    if (!captureWanted() || captureStream) {
+      opened.getTracks().forEach((track) => track.stop());
+      return;
+    }
+    captureStream = opened;
     $("capture-video").srcObject = captureStream;
   } catch (error) {
     showWorkerMessage(`Could not open the camera: ${error.message}`, false);

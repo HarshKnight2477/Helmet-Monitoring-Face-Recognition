@@ -28,6 +28,7 @@ A real-time computer vision system that detects workers without hard hats and id
 4. **Violation tracking** ([`compliance/tracker.py`](helmet_monitor/compliance/tracker.py)):
    - A violation is recorded only after a person has been without a hard hat for **10 seconds** straight. The live view shows a countdown above their head.
    - Putting a hard hat on, or leaving the frame for more than 2 s, resets the timer. Shorter detection dropouts don't.
+   - If a worker's face briefly isn't recognised (looking down, turned away), their bare head is matched to where they just were, so the time still counts for them.
    - After recording, the same worker isn't recorded again for 60 s.
 5. **Async real-time backend** ([`streaming/session.py`](helmet_monitor/streaming/session.py), [`api/websocket.py`](helmet_monitor/api/websocket.py)):
    - Each camera gets its own WebSocket session. Receiving and processing run as separate asyncio tasks joined by a small queue.
@@ -79,7 +80,7 @@ Full reports: [`reports/detection_metrics.md`](reports/detection_metrics.md) and
 - Violation log with annotated snapshots and a per-worker summary
 - Several cameras at once, one WebSocket each, sharing one set of models
 - REST API with interactive docs at `/docs`
-- 69 automated tests that run in about 2 seconds, with no model downloads (models are replaced by fakes)
+- 72 automated tests that run in about 2 seconds, with no model downloads (models are replaced by fakes)
 
 ## Getting started
 
